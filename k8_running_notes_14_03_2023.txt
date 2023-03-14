@@ -1,0 +1,278 @@
+13/03/2023- Creation of pod (object)
+
+//bare matel cluster is not  working run the following commands
+
+	kubectl delete -f https://docs.projectcalico.org/v3.14/manifests/calico.yaml
+	kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
+	wget https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
+	replace cidr with 10.244.0.0/16
+	kubectl apply -f custom-resources.yaml
+
+
+	# kubectl get nodes     //to see the info about nodes
+	# kubectl get pods       //only creted
+	# kubectl get pods -A //all the namespace and all are running in kubesystem namespace which is default 
+	# kubectl get ns      //to check the namespace 
+
+//create a yaml file to create pod //jenkinspod1.yaml
+
+	apiVersion: v1
+	kind: Pod
+	metadata:
+	  labels:
+		app: jenkins  //key and value 
+	  name: jenkinspod1
+	spec:
+	  containers:
+		- image: jenkins/jenkins:lts
+      name: jenkins
+ 
+	 # kubectl apply -f jenkinspod1.yaml
+	 # kubectl get pods
+	 # kubectl get pods -o wide
+
+//14/03/2023- Types of k8 services
+   So far we have created and deployed jenkin pod in worked node using jenkinspod.yaml
+
+	# kubectl get pods -o wide      //disply the pod status along withe its Ip
+
+Q1. how do you connect  pod  u have created (jenkinspd) or how do u check that pod is up and running 
+
+   # curl -v  ip-add:jenkinsport_no
+     curl -v         :8080 //the scope of this Ip add is only within the cluster
+
+Q2 how do w e access this pod from the machine level ?
+
+ ans-  we have k8 service for that...bcz  the scope of the pod is only within the cluster
+     - k8 service -it bridge the gap b/e pods and service 
+     - it is the way we expose the app to outside world
+     - to expose any app outside we have to depend on services....
+
+Q3 Types of services
+
+	K8s service type allows you to specify what kind of service you want, the default is cluster IP
+	Type values and their behaviours are:
+
+	⦁ ClusterIP:  Exposes the service on a cluster internal IP. Using this value makes the service only reachable from within the cluster.\
+	 This is the default service type.
+	⦁ NodePort: exposes the service on each nodes IP at a static port.
+	   A cluster IP service, to which the nodes port service routes are automatically created.
+	⦁ LoadBalancer: exposes the service externally using a cloud providers load balancer.
+	   Node port and cluster IP services, to which the external load balancer routes or automatically created.
+	⦁ ExternalName/ExternalIP: maps the service to the content of external fields by written a C name records within a value.
+
+
+Q4 create  ClusterIP service
+
+  - first we have to write mainifest file  to create CIP service /yaml file 
+  - vi clusterip.yaml
+     
+	apiVersion: v1
+	kind: Service
+	metadata:
+	  name: jenkinservice
+	spec:
+	  type: ClusterIP
+	  ports:
+		- name: http
+		  protocol: TCP
+		  port: 8080
+		  targetPort: 8080
+	  selector:
+		  app: jenkins   /we are  connecting service with pod through selectors/labels
+	                    refer the label  in pod manifest file 
+
+	 
+	
+		
+   - to check pod labels, which is given at the time of pod creation 
+    # kubectl get pods --show-labels
+   
+   - Aplly and service will be created
+     # kubectl  apply -f clusterjen.yaml
+   
+   - to check the services which has been created
+     //It will be display the cluster Ip with this Ip we can access the jenkins service
+    
+	#kubectl  get service       //scope of the service is only within this cluster not outside
+	$curl -v clusterIp:8080  // 8080 jenkins port
+	
+Q5. what are the benefits of clusterIp,if the scope is only within cluster 
+
+  #kubectl get endpoints       //the service ip is internally mapping to pod ip
+  # kubectl get pods -o wide   //check th ip of pod
+
+   //create another  pod for the same service jenkins   
+
+	-vi jenkinspod2.yaml
+
+	apiVersion: v1
+	kind: Pod
+	metadata:
+	  labels:
+		app: jenkins1         //this name should be diff since we are creating diff pod for same service refer jenkinspod1.yaml
+	  name: jenkinspod1
+	spec:
+	  containers:
+		- image: jenkins/jenkins:lts
+		  name: jenkins
+
+
+
+   #kubectl apply -f jenkinspod2.yaml
+   #kubectl get pods
+   #kubectl get pods -o wide       // to check the pod is working in which worker node
+   #kubectl get pod --show-labels
+   #kubectl get svc
+   #kubectl get endpoints  
+       //if we execute the above manifest file another pod created with the same service
+       //in the endpoints we can see for one service two ips will be mapped
+       //Benefits of CIP----so it is working as  load balancer ,
+   it will route the traffic to differnt pods and balance the load
+   
+Q6 NodePort service
+
+	-It is having a set of Ip add are reserved for specific actions
+	-it exposes the service on each node Ip at static port
+	- so with the server public ip:nodePort we can access the application 
+	-The static nodePort port range is  30000-32767
+	-Benefits- using nodeport,we can access the application outside the cluster so overcome the drabacks of clusterIp
+	          -scope-it exposes the service on each node Ip at static port
+			  - master or worker node publicIp:nodePort in the browser we can access the application
+			  -Y NodePort=to make the node port available to k8 cluster(master and worker nodes)
+	
+	- first we have to write mainifest file  to create NodePort service  and save the file 
+	- vi nodeport.yaml
+
+	apiVersion: v1
+	kind: Service
+	metadata:
+	  name: nodeport
+	spec:
+	  type: NodePort
+	  ports:
+		- name: jenkinsport
+		  protocol: TCP
+		  port: 8060         //cluster Ip any number
+		  targetPort: 8080   //Container port  should be jenkin port
+		  nodePort: 30100    //range of node port choose from that range
+	  selector:
+		app: jenkins         // we are  connecting service with pod through selectors/labels
+	                    refer the label in pod manifest file same kay and value we have to pass here
+
+						
+  # kubectl apply -f  nodeport.yaml
+  #kubectl get service   //cluster port will be mapped with targetPort and 
+                            then it will mapped with nodeport check in the above manifest file
+						// access the application with server public ip and with node port 
+  #kubectl get endpoints 
+  
+  
+Q7 load balancer service  	
+
+
+	First we have to write mainifest file  to create NodePort service  and save the file 
+  
+	- vi loadBalancer.yaml
+		 
+	apiVersion: v1
+	kind: Service
+	metadata:
+	  name: loadbalancer
+	spec:
+	  type: LoadBalancer
+	  ports:
+		- name: jenkinslb
+		  protocol: TCP
+		  port: 80              //Node port  any number
+		  targetPort: 8080      //Container port  should be jenkin port
+	  selector:
+		app: jenkins
+
+	 
+		
+  # kubectl apply -f  loadBalancer.yaml
+  # kubectl get svc
+  # kubectl describe  service <servicename>    //error so edit policy in JSOn script for both worker and master node
+    -ec2:DescribeAccountAttributes             //update this policy to both master and worker node
+  
+  #kubectl get svc                            //copy the external ip of load balancer  and hit in browser to acces the application 
+
+	root@ip-10-0-0-196:~# kubectl get svc
+	NAME           TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)          AGE
+	clusterip      ClusterIP      10.100.201.216   <none>                                                                    8080/TCP         30m
+	kubernetes     ClusterIP      10.100.0.1       <none>                                                                    443/TCP          3d14h
+	loadbalancer   LoadBalancer   10.100.197.35    a61e852125e3a4422b4e4623db1d10ec-520192335.ap-south-1.elb.amazonaws.com   80:30405/TCP     21m
+	nodeport       NodePort       10.100.45.152    <none>                                                                    8060:30100/TCP   33m
+
+  
+Q8 ExternalIp service
+	 -here we have mappied our service to private ip-add of the machine
+	 - it works like a port mapping
+	 -here we have mapped private ip to the service so it will expose that service to outside
+ 
+	- vi external.yaml
+		 
+	apiVersion: v1
+	kind: Service
+	metadata:
+	  name: externalip
+	spec:
+	  ports:
+		- name: jenextport
+		  protocol: TCP
+		  port: 80                 //External  port  any number
+		  targetPort: 8080         /Container port  should be jenkin port
+	  selector:
+		app: jenkins
+	  externalIPs:
+		- 10.0.0.196               //pass the server private ip
+
+	
+	   
+	   
+	 #kubectl apply -f external.yaml
+	 #kubectl get svc
+	 #curl -v <externalIp>:80     //private ip  masternode
+	 
+	 #kubectl delete svc  name_of_service
+	 
+	 
+	 Assignment insteed of master node privateip give worker node privateip and check
+ 
+ 
+ Q9 .Externalname service
+ 
+  - getting something from outside the cluster  to within your cluster
+  - example -to use google.com as service 
+  -consming outside service to cluster
+ 
+ - vi extname.yaml
+     
+	 apiVersion: v1
+	 kind: Service
+	 metadata: 
+	   name: my-service
+	   
+	 spec:
+       type: ExternalName
+       externalName: flipcart.com	   
+	  
+	#kubectl apply -f extname.yaml
+    #curl <external_servicename>
+ 
+summary
+
+kubectl get nodes 
+kubectl get pods 
+kubectl get pods -A 
+kubectl get ns  
+kubectl apply -f filename.yaml
+kubectl get pods -o wide
+curl -v  ip-add:portno
+kubectl get pods --show-labels
+kubectl get endpoints  
+kubectl get svc
+kubectl describe service <servicename> 
+kubectl delete svc  name_of_service
+kubectl delete pod  name_of_pod
